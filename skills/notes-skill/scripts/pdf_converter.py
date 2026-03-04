@@ -3,7 +3,6 @@
 PDF到MD笔记转换脚本
 """
 
-import pdfplumber
 import re
 import os
 from datetime import datetime
@@ -12,15 +11,19 @@ def extract_text_from_pdf(pdf_path):
     """从PDF文件中提取文本内容"""
     text = ""
     try:
+        import pdfplumber
         with pdfplumber.open(pdf_path) as pdf:
             for page in pdf.pages:
-                text += page.extract_text() + "\n"
+                text += (page.extract_text() or "") + "\n"
+    except ModuleNotFoundError:
+        print("Error: Missing dependency 'pdfplumber'. Install it with: pip install pdfplumber")
+        return None
     except Exception as e:
         print(f"Error extracting text from PDF: {e}")
         return None
     return text
 
-def structure_notes(text, title=""):
+def structure_notes(text, title="", pdf_path=""):
     """将提取的文本结构化为Markdown笔记"""
     # 基本的Markdown结构
     structured_notes = f"""# {title or "学习笔记"}
@@ -48,7 +51,7 @@ def structure_notes(text, title=""):
 
 ## 相关资源
 
-- [原始PDF文件]({pdf_path})
+- [原始PDF文件]({pdf_path or "N/A"})
 """
     return structured_notes
 
@@ -90,7 +93,7 @@ def convert_pdf_to_md(pdf_path, output_dir="output"):
     title = os.path.splitext(os.path.basename(pdf_path))[0]
 
     # 结构化笔记
-    structured_notes = structure_notes(text, title)
+    structured_notes = structure_notes(text, title, pdf_path)
 
     # 创建输出目录
     os.makedirs(output_dir, exist_ok=True)

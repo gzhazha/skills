@@ -4,6 +4,7 @@
 """
 
 import json
+import os
 import random
 import re
 from datetime import datetime
@@ -58,6 +59,9 @@ class TestGenerator:
 
         # 生成问题
         questions = self._generate_questions(relevant_notes, settings, question_types)
+
+        for i, question in enumerate(questions, start=1):
+            question.setdefault("id", f"q_{i}")
 
         # 创建测试
         test = {
@@ -297,6 +301,7 @@ class TestGenerator:
             "total": total,
             "percentage": (score / total) * 100,
             "results": results,
+            "questions": test["questions"],
             "graded_at": datetime.now().isoformat()
         }
 

@@ -30,9 +30,9 @@ class KnowledgeBaseManager:
 
     def save_database(self):
         """保存知识库"""
+        self.database["metadata"]["last_updated"] = datetime.now().isoformat()
         with open(self.db_path, 'w', encoding='utf-8') as f:
             json.dump(self.database, f, indent=2, ensure_ascii=False)
-        self.database["metadata"]["last_updated"] = datetime.now().isoformat()
 
     def add_note(self, note_path, category, title=None, tags=None):
         """添加笔记到知识库"""
@@ -143,7 +143,7 @@ class KnowledgeBaseManager:
                 del self.database["notes"][i]
 
                 # 从分类中移除
-                for category in self.database["categories"]:
+                for category in list(self.database["categories"].keys()):
                     if note_id in self.database["categories"][category]:
                         self.database["categories"][category].remove(note_id)
                         if not self.database["categories"][category]:

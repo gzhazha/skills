@@ -4,7 +4,9 @@
 """
 
 import json
+import os
 import statistics
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
 class WeaknessAnalyzer:
@@ -183,6 +185,9 @@ class WeaknessAnalyzer:
             "focus_areas": [],
             "daily_activities": []
         }
+
+        if not sorted_topics:
+            return targeted_plan
 
         # 为每个薄弱主题制定计划
         for topic, count in sorted_topics[:3]:  # 只关注前3个最薄弱的主题

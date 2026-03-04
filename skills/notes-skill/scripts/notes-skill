@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""
+notes-skill unified CLI.
+"""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
+
+from knowledge_base_manager import KnowledgeBaseManager
+from learning_planner import LearningPlanner
+from pdf_converter import convert_pdf_to_md
+from test_generator import TestGenerator
+from weakness_analyzer import WeaknessAnalyzer
+
+
+def parse_csv(value: str):
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog="notes-skill")
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--db-path",
+        default="knowledge_base.json",
+        help="Path to knowledge base JSON file (default: knowledge_base.json).",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    convert = subparsers.add_parser(
+        "convert-pdf", help="Convert a PDF file to markdown.", parents=[common]
+    )
+    convert.add_argument("pdf_path", help="Input PDF path.")
+    convert.add_argument("--output-dir", default="output", help="Output directory for markdown.")
+
+    add_pdf = subparsers.add_parser(
+        "add-pdf", help="Convert PDF and add to knowledge base.", parents=[common]
+    )
+    add_pdf.add_argument("pdf_path", help="Input PDF path.")
+    add_pdf.add_argument("--category", required=True, help="Category for the note.")
+    add_pdf.add_argument("--title", help="Optional note title.")
+    add_pdf.add_argument("--tags", default="", help="Comma-separated tags.")
+    add_pdf.add_argument("--output-dir", default="output", help="Output directory for markdown.")
+
+    add_note = subparsers.add_parser(
+        "add-note", help="Add an existing markdown note to knowledge base.", parents=[common]
+    )
+    add_note.add_argument("note_path", help="Path to markdown note.")
+    add_note.add_argument("--category", required=True, help="Category for the note.")
+    add_note.add_argument("--title", help="Optional note title.")
+    add_note.add_argument("--tags", default="", help="Comma-separated tags.")
+
+    list_notes = subparsers.add_parser(
+        "list-notes", help="List notes in knowledge base.", parents=[common]
+    )
+    list_notes.add_argument("--category", help="Filter by category.")
+    list_notes.add_argument("--search", help="Filter by keyword in title/summary.")
+
+    search = subparsers.add_parser("search", help="Search notes by query.", parents=[common])
+    search.add_argument("query", help="Search keyword.")
+
+    update = subparsers.add_parser(
+        "update-note", help="Update note content by note ID.", parents=[common]
+    )
+    update.add_argument("note_id", type=int, help="Note ID.")
+    update_group = update.add_mutually_exclusive_group(required=True)
+    update_group.add_argument("--content", help="New note content.")
+    update_group.add_argument("--content-file", help="Path to file containing new content.")
+
+    gen_plan = subparsers.add_parser(
+        "generate-plan", help="Generate study plan.", parents=[common]
+    )
+    gen_plan.add_argument("--duration", type=int, required=True, help="Plan duration in days.")
+    gen_plan.add_argument("--focus", default="", help="Comma-separated focus topics.")
+    gen_plan.add_argument("--daily-hours", type=float, default=2.0, help="Daily study hours.")
+    gen_plan.add_argument(
+        "--difficulty",
+        choices=["easy", "medium", "hard"],
+        default="medium",
+        help="Difficulty level.",
+    )
+    gen_plan.add_argument("--output", default="study_plan.json", help="Output plan JSON path.")
+
+    gen_test = subparsers.add_parser(
+        "generate-test", help="Generate a test from knowledge base.", parents=[common]
+    )
+    gen_test.add_argument("--topics", required=True, help="Comma-separated topics.")
+    gen_test.add_argument(
+        "--difficulty",
+        choices=["easy", "medium", "hard"],
+        default="medium",
+        help="Difficulty level.",
+    )
+    gen_test.add_argument("--num-questions", type=int, default=10, help="Number of questions.")
+    gen_test.add_argument("--types", default="", help="Comma-separated question types.")
+    gen_test.add_argument("--output", default="test.json", help="Output test JSON path.")
+
+    analyze = subparsers.add_parser(
+        "analyze-weakness", help="Analyze weakness from test results.", parents=[common]
+    )
+    analyze.add_argument("--test-results", required=True, help="Path to graded test result JSON.")
+    analyze.add_argument("--study-plan", help="Optional study plan JSON.")
+    analyze.add_argument("--output", default="weakness_analysis.json", help="Output analysis JSON.")
+
+    return parser
+
+
+def handle_convert_pdf(args):
+    output = convert_pdf_to_md(args.pdf_path, args.output_dir)
+    return 0 if output else 1
+
+
+def handle_add_pdf(args):
+    note_path = convert_pdf_to_md(args.pdf_path, args.output_dir)
+    if not note_path:
+        return 1
+
+    manager = KnowledgeBaseManager(args.db_path)
+    ok = manager.add_note(
+        note_path=note_path,
+        category=args.category,
+        title=args.title,
+        tags=parse_csv(args.tags),
+    )
+    return 0 if ok else 1
+
+
+def handle_add_note(args):
+    manager = KnowledgeBaseManager(args.db_path)
+    ok = manager.add_note(
+        note_path=args.note_path,
+        category=args.category,
+        title=args.title,
+        tags=parse_csv(args.tags),
+    )
+    return 0 if ok else 1
+
+
+def handle_list_notes(args):
+    manager = KnowledgeBaseManager(args.db_path)
+    notes = manager.list_notes(category=args.category, search_term=args.search)
+    if not notes:
+        print("No notes found.")
+        return 0
+
+    for note in notes:
+        print(f"{note['id']}: {note['title']} ({note['category']}) -> {note['path']}")
+    return 0
+
+
+def handle_search(args):
+    manager = KnowledgeBaseManager(args.db_path)
+    results = manager.search_notes(args.query)
+    if not results:
+        print("No matching notes found.")
+        return 0
+
+    for note in results:
+        print(f"{note['id']}: {note['title']} ({note['category']})")
+    return 0
+
+
+def handle_update_note(args):
+    if args.content_file:
+        with open(args.content_file, "r", encoding="utf-8") as f:
+            new_content = f.read()
+    else:
+        new_content = args.content
+
+    manager = KnowledgeBaseManager(args.db_path)
+    ok = manager.update_note(args.note_id, new_content)
+    if not ok:
+        print(f"Failed to update note: {args.note_id}")
+        return 1
+    return 0
+
+
+def handle_generate_plan(args):
+    planner = LearningPlanner(args.db_path)
+    focus_topics = parse_csv(args.focus)
+    plan = planner.generate_study_plan(
+        duration_days=args.duration,
+        focus_topics=focus_topics or None,
+        daily_study_hours=args.daily_hours,
+        difficulty_level=args.difficulty,
+    )
+    planner.save_plan(plan, args.output)
+    return 0
+
+
+def handle_generate_test(args):
+    generator = TestGenerator(args.db_path)
+    topics = parse_csv(args.topics)
+    question_types = parse_csv(args.types)
+    test = generator.generate_test(
+        topics=topics,
+        difficulty=args.difficulty,
+        num_questions=args.num_questions,
+        question_types=question_types or None,
+    )
+    if not test:
+        return 1
+    generator.save_test(test, args.output)
+    return 0
+
+
+def handle_analyze_weakness(args):
+    with open(args.test_results, "r", encoding="utf-8") as f:
+        test_results = json.load(f)
+
+    study_plan = None
+    if args.study_plan:
+        with open(args.study_plan, "r", encoding="utf-8") as f:
+            study_plan = json.load(f)
+
+    analyzer = WeaknessAnalyzer(args.db_path)
+    analysis = analyzer.analyze_weaknesses(test_results, study_plan)
+    analyzer.save_analysis(analysis, args.output)
+    return 0
+
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+
+    handlers = {
+        "convert-pdf": handle_convert_pdf,
+        "add-pdf": handle_add_pdf,
+        "add-note": handle_add_note,
+        "list-notes": handle_list_notes,
+        "search": handle_search,
+        "update-note": handle_update_note,
+        "generate-plan": handle_generate_plan,
+        "generate-test": handle_generate_test,
+        "analyze-weakness": handle_analyze_weakness,
+    }
+
+    handler = handlers[args.command]
+    return handler(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
